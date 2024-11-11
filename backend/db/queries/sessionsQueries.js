@@ -23,7 +23,8 @@ function loginUser(req, res) {
       console.error('Error saving session:', err);
       return res.status(500).send("Error logging in");
     }
-    res.json(req.user);
+    // Sending user data along with session details if needed
+    res.json({ user: req.user, message: "Login successful" });
   });
 }
 

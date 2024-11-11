@@ -1,55 +1,62 @@
 <script>
-  import { onMount } from 'svelte';
-  import AllFeedItems from '$lib/components/AllFeedItems.svelte';
-  import { snackbar, openSnackbar } from '$lib/stores/snackbar';
-  import { auth } from '$lib/stores/auth';
-  import { createEventDispatcher } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
+  import { foodItems, fetchUserFoodItems, claimItem, unclaimItem } from '../../lib/stores/foodItems';
+  import AllFeedItems from '../../lib/components/Feed/AllFeedItems.svelte';
 
-  /** @type {{ id: number, name: string, quantity: number, set_time: string, vendor_name: string, is_claimed: boolean }[]} */
-  let allFoodItems = [];  // Adding explicit type for array of food items
-  /** @type {string | null} */
-  let error = null;
+  /** @type {import('../../lib/stores/foodItems').FoodItem[]} */
+  
+  let items = []; // Array to hold the food items
+  let error = null; // Error handling
 
-  const dispatch = createEventDispatcher();
+  const unsubscribe = foodItems.subscribe((state) => {
+    items = state.foodItems;
+  });
 
   onMount(async () => {
     try {
-      const response = await fetch('/api/foodItems');
+      const response = await fetch('/api/foodItems'); // Fetch food items directly from the API
       if (!response.ok) throw new Error('Failed to load food items');
       const data = await response.json();
-      allFoodItems = data.food_items || [];
+      items = data.food_items || []; // Populate `items` with fetched data
     } catch (err) {
       error = (err instanceof Error) ? err.message : 'An unknown error occurred';
       console.error('Error loading data:', err);
     }
   });
 
+  onDestroy(() => {
+    unsubscribe(); // Cleanup subscription
+  });
+
   /**
-   * @param {{ detail: { foodId: number; isClaimed: boolean }}} event
+   * Handler for claiming/unclaiming items
+   * @param {number} itemId - The ID of the food item
+   * @param {boolean} isClaimed - Current claimed status
    */
-  function claimItem(event) {
-    const { foodId, isClaimed } = event.detail;
-    fetch(`/api/fooditems/claimstatus/${foodId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        client_id: isClaimed ? null : $auth.user?.id || null,
-        is_claimed: !isClaimed
-      })
-    })
-    .then(() => openSnackbar())
-    .catch(err => console.error('Error claiming item:', err));
+  async function handleClaimToggle(itemId, isClaimed) {
+    try {
+      if (isClaimed) {
+        await unclaimItem(itemId);
+      } else {
+        await claimItem(itemId);
+      }
+      // Update local state to reflect the change
+      items = items.map(item =>
+        item.id === itemId ? { ...item, isClaimed: !isClaimed } : item
+      );
+    } catch (error) {
+      console.error('Error toggling claim status:', error);
+    }
   }
 </script>
 
-<style>
-  @import '../../routes/feed/css/Feed.css'; 
-</style>
+<div id="feed-container">
+  <h1 id="feed">Available Food Items</h1>
 
-<div class="feedWrapper">
-  {#if error}
-    <p>{error}</p>
-  {:else}
-    <AllFeedItems {allFoodItems} on:claimItem={claimItem} />
-  {/if}
+  <!-- Pass the items and claim toggle handler to AllFeedItems component -->
+  <AllFeedItems {items} on:claimToggle={(e) => handleClaimToggle(e.detail.itemId, e.detail.isClaimed)} />
 </div>
+
+<style>
+  @import '../../routes/feed/css/Feed.css';
+</style>
